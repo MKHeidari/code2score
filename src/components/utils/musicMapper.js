@@ -1,5 +1,7 @@
 // src/components/utils/musicMapper.js
 
+import { Note, Scale } from '@tonaljs/tonal';
+
 /**
  * Centralized music mapping logic for Code2Score
  * Maps code features → musical parameters
@@ -72,4 +74,39 @@ export const constrainNoteToKey = (noteName, key = 'C') => {
   const tonal = require('tonal'); // We'll add this later if needed
   // For now, we'll just return as-is — Phase 3 can add scale enforcement
   return noteName;
+};
+
+// Get scale notes for a given key
+export const getScaleNotes = (key = 'C') => {
+  // Map key signature to scale type
+  const isMinor = ['Am', 'Em', 'Bm', 'Dm', 'Gm'].includes(key + 'm') || key.includes('m');
+  const scaleType = isMinor ? 'minor' : 'major';
+  const scale = Scale.get(key + ' ' + scaleType);
+  return scale.notes; // e.g., ["C", "D", "E", "F", "G", "A", "B"]
+};
+
+// Constrain note to nearest in-scale note
+export const constrainNoteToKey = (noteName, key = 'C') => {
+  const scaleNotes = getScaleNotes(key);
+  const note = Note.get(noteName);
+  if (!note || !note.chroma) return noteName; // fallback
+
+  const chroma = note.chroma; // 0-11
+  const scaleChromas = scaleNotes.map(n => Note.get(n).chroma).filter(n => n !== undefined);
+
+  // Find closest in-scale chroma
+  let closest = scaleChromas[0];
+  let minDist = 12;
+  for (let sc of scaleChromas) {
+    const dist = Math.min(Math.abs(chroma - sc), 12 - Math.abs(chroma - sc));
+    if (dist < minDist) {
+      minDist = dist;
+      closest = sc;
+    }
+  }
+
+  // Return note in same octave
+  const octave = note.octave || 4;
+  const closestNote = scaleNotes.find(n => Note.get(n).chroma === closest);
+  return closestNote + octave;
 };
