@@ -12,7 +12,10 @@ import {
   getTimeSignatureByAvgLength,
   getInstrumentByKeyword,
   getVelocityAndOctaveByIndent,
+  constrainNoteToKey,
 } from './utils/musicMapper';
+import { generateMIDI } from './utils/midiGenerator';
+import { useTheme } from '../context/ThemeContext';
 
 const VF = Vex.Flow;
 
@@ -20,10 +23,10 @@ export default function CodeToMusicPlayer() {
   const editorRef = useRef(null);
   const canvasRef = useRef(null);
   const [notes, setNotes] = useState([]);
-  const [filename, setFilename] = useState('example.js'); // simulate file type
-
-  // Synth instances by type (cached)
+  const [filename, setFilename] = useState('example.js');
+  const [isPlaying, setIsPlaying] = useState(false);
   const synthCache = useRef({});
+  const { darkMode } = useTheme();
 
   const getSynth = (type) => {
     if (synthCache.current[type]) return synthCache.current[type];
@@ -58,7 +61,6 @@ export default function CodeToMusicPlayer() {
     return synth;
   };
 
-  // Initialize CodeMirror
   useEffect(() => {
     if (!editorRef.current) return;
 
@@ -66,7 +68,7 @@ export default function CodeToMusicPlayer() {
       value: `function hello() {\n  console.log("Hello, world!");\n    if (true) {\n      return true;\n    }\n}`,
       mode: 'javascript',
       lineNumbers: true,
-      theme: 'default',
+      theme: darkMode ? 'monokai' : 'default',
       viewportMargin: Infinity,
     });
 
@@ -74,7 +76,6 @@ export default function CodeToMusicPlayer() {
       const content = editor.getValue();
       const lines = content.split('\n').filter(line => line.trim() !== '');
 
-      // Calculate average line length for time sig
       const avgLength = lines.reduce((sum, line) => sum + line.length, 0) / lines.length;
       const timeSig = getTimeSignatureByAvgLength(avgLength);
       const keySig = getKeySignatureByExtension(filename);
@@ -85,14 +86,13 @@ export default function CodeToMusicPlayer() {
         const { velocity, octaveShift } = getVelocityAndOctaveByIndent(line);
         const instrument = getInstrumentByKeyword(line);
 
-        // Pitch: base + length + octave shift
-        const basePitch = 60 + octaveShift * 12; // C4 + octave shift
+        const basePitch = 60 + octaveShift * 12;
         const pitchOffset = Math.min(Math.floor(length / 5), 12);
         const midiNote = basePitch + pitchOffset;
         let noteName = Tone.Frequency(midiNote, "midi").toNote();
 
-        // Later: constrain to key
-        // noteName = constrainNoteToKey(noteName, keySig);
+        // 🔑 SCALE ENFORCEMENT!
+        noteName = constrainNoteToKey(noteName, keySig);
 
         let duration = "4n";
         if (lastChar === '}') duration = "2n";
@@ -119,23 +119,33 @@ export default function CodeToMusicPlayer() {
 
     editor.on('change', analyzeCode);
     analyzeCode();
-  }, [filename]);
 
-  // Render VexFlow staff
+    // Cleanup
+    return () => {
+      editor.toTextArea();
+    };
+  }, [filename, darkMode]);
+
   useEffect(() => {
     if (!canvasRef.current || notes.length === 0) return;
 
     const canvas = canvasRef.current;
-    const renderer = new VF.Renderer(canvas, VF.Renderer.Backends.CANVAS);
-    renderer.resize(800, 250);
+    const renderer = new VF.Renderer(canvas, VF.Renderer.Backends.SVG);
+    renderer.resize(800, 300);
 
     const context = renderer.getContext();
-    context.setFont("Arial", 12, "").setBackgroundFillStyle("#f9f9f9");
+    context.setBackgroundFillStyle(darkMode ? "#1f2937" : "#f9fafb");
+    context.setStrokeStyle(darkMode ? "#f9fafb" : "#111827");
+    context.setFont("Arial", 14, "");
 
     const firstNote = notes[0];
-    const stave = new VF.Stave(10, 10, 750);
-    stave.addClef("treble").addTimeSignature(firstNote.timeSig).addKeySignature(firstNote.keySig);
-    stave.setContext(context).draw();
+    const stave = new VF.Stave(20, 20, 750);
+    stave
+      .addClef("treble")
+      .addTimeSignature(firstNote.timeSig)
+      .addKeySignature(firstNote.keySig)
+      .setContext(context)
+      .draw();
 
     const vexNotes = notes.map(note => {
       const vfnote = new VF.StaveNote({
@@ -144,11 +154,10 @@ export default function CodeToMusicPlayer() {
         duration: note.duration.replace('n', ''),
       });
 
-      // Add dynamic mark if loud
       if (note.velocity > 0.7) {
-        vfnote.addModifier(new VF.Annotation("f").setFont("Arial", 10), 0);
+        vfnote.addModifier(new VF.Annotation("f").setFont("Arial", 12), 0);
       } else if (note.velocity < 0.4) {
-        vfnote.addModifier(new VF.Annotation("p").setFont("Arial", 10), 0);
+        vfnote.addModifier(new VF.Annotation("p").setFont("Arial", 12), 0);
       }
 
       return vfnote;
@@ -160,28 +169,24 @@ export default function CodeToMusicPlayer() {
     }).setStrict(false);
 
     voice.addTickables(vexNotes);
-
     const formatter = new VF.Formatter().joinVoices([voice]).format([voice], 700);
     voice.draw(context, stave);
-  }, [notes]);
+  }, [notes, darkMode]);
 
-  // Play with animation
   const playNotes = async () => {
-    if (notes.length === 0) return;
+    if (notes.length === 0 || isPlaying) return;
 
+    setIsPlaying(true);
     await Tone.start();
+
     const now = Tone.now();
     let time = now;
-
     const editor = editorRef.current?.CodeMirror;
 
     notes.forEach((note, index) => {
       const synth = getSynth(note.instrument);
-
-      // Schedule note
       synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
 
-      // Schedule highlight
       setTimeout(() => {
         if (editor) {
           editor.setCursor({ line: index, ch: 0 });
@@ -194,18 +199,41 @@ export default function CodeToMusicPlayer() {
 
       time += Tone.Time(note.duration).toSeconds() + 0.1;
     });
+
+    setTimeout(() => {
+      setIsPlaying(false);
+    }, (time - now) * 1000);
   };
 
-  // Simulate file type change (you can add real file upload later)
+  const exportMIDI = () => {
+    if (notes.length === 0) return;
+    generateMIDI(notes, 120); // 120 BPM
+  };
+
   const handleFileTypeChange = (e) => {
     setFilename(e.target.value);
   };
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'system-ui', textAlign: 'left' }}>
-      <div style={{ marginBottom: '10px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-        <label>Simulate file type: </label>
-        <select value={filename} onChange={handleFileTypeChange} style={{ padding: '4px' }}>
+    <div style={{
+      background: 'var(--bg-secondary)',
+      padding: '2rem',
+      borderRadius: '12px',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+    }}>
+      <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <label style={{ fontWeight: '500' }}>Simulate file type:</label>
+        <select
+          value={filename}
+          onChange={handleFileTypeChange}
+          style={{
+            padding: '0.5rem',
+            borderRadius: '6px',
+            border: '1px solid var(--border-color)',
+            background: 'var(--bg-primary)',
+            color: 'var(--text-primary)',
+          }}
+        >
           <option value="example.js">JavaScript (.js)</option>
           <option value="example.py">Python (.py)</option>
           <option value="example.php">PHP (.php)</option>
@@ -217,43 +245,86 @@ export default function CodeToMusicPlayer() {
       <div
         ref={editorRef}
         style={{
-          height: '200px',
-          border: '1px solid #ddd',
-          marginBottom: '20px',
-          borderRadius: '4px',
+          height: '220px',
+          border: '1px solid var(--border-color)',
+          borderRadius: '8px',
+          marginBottom: '1.5rem',
+          background: 'var(--bg-primary)',
         }}
       ></div>
 
-      <button
-        onClick={playNotes}
-        style={{
-          padding: '12px 24px',
-          background: '#059669',
-          color: 'white',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          marginBottom: '20px',
-        }}
-      >
-        🎼 Play Dynamic Symphony
-      </button>
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+        <button
+          onClick={playNotes}
+          disabled={isPlaying}
+          style={{
+            padding: '0.75rem 1.5rem',
+            background: isPlaying ? '#6b7280' : 'var(--button-primary)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: isPlaying ? 'not-allowed' : 'pointer',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          {isPlaying ? '▶️ Playing...' : '▶️ Play Symphony'}
+        </button>
 
-      <div>
-        <canvas ref={canvasRef} width="800" height="250"></canvas>
+        <button
+          onClick={exportMIDI}
+          disabled={notes.length === 0}
+          style={{
+            padding: '0.75rem 1.5rem',
+            background: notes.length === 0 ? '#6b7280' : '#4f46e5',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: notes.length === 0 ? 'not-allowed' : 'pointer',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          💾 Export MIDI
+        </button>
+      </div>
+
+      <div style={{
+        background: 'var(--bg-primary)',
+        padding: '1.5rem',
+        borderRadius: '8px',
+        border: '1px solid var(--border-color)',
+      }}>
+        <canvas
+          ref={canvasRef}
+          width="800"
+          height="300"
+          style={{ maxWidth: '100%', height: 'auto' }}
+        ></canvas>
       </div>
 
       {notes.length > 0 && (
-        <details style={{ marginTop: '30px', background: '#fafafa', padding: '15px', borderRadius: '8px' }}>
-          <summary>📊 Phase 2 Debug: Dynamics, Keys, Instruments</summary>
-          <div style={{ fontSize: '0.85em', lineHeight: '1.6' }}>
-            <p><strong>Time Signature:</strong> {notes[0]?.timeSig} | <strong>Key:</strong> {notes[0]?.keySig}</p>
-            <ul>
+        <details style={{
+          marginTop: '1.5rem',
+          background: 'var(--bg-primary)',
+          padding: '1.5rem',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)',
+        }}>
+          <summary style={{ fontWeight: '600', cursor: 'pointer' }}>
+            📊 Debug: Scale-Constrained Notes & Mapping
+          </summary>
+          <div style={{ fontSize: '0.875rem', lineHeight: '1.6', marginTop: '1rem' }}>
+            <p><strong>Time Sig:</strong> {notes[0]?.timeSig} | <strong>Key:</strong> {notes[0]?.keySig} → Scale: {getScaleNotes(notes[0]?.keySig).join(', ')}</p>
+            <ul style={{ paddingLeft: '1.25rem' }}>
               {notes.map((note, i) => (
                 <li key={i}>
                   <strong>L{i+1}:</strong> <code>{note.content.trim()}</code> → 
-                  <span style={{ color: '#d946ef', fontWeight: 'bold' }}> {note.noteName}</span> | 
+                  <span style={{ color: '#d946ef', fontWeight: '600' }}> {note.noteName}</span> (in-key) | 
                   <span style={{ color: '#059669' }}> {note.duration}</span> | 
                   <span style={{ color: '#dc2626' }}> vol: {note.velocity.toFixed(2)}</span> | 
                   <span style={{ color: '#7c3aed' }}> 🎹 {note.instrument}</span>
@@ -263,14 +334,6 @@ export default function CodeToMusicPlayer() {
           </div>
         </details>
       )}
-
-      {/* Inject CSS for line highlight */}
-      <style jsx>{`
-        .highlight-line {
-          background-color: #fef3c7 !important;
-          transition: background-color 0.3s;
-        }
-      `}</style>
     </div>
   );
 }
