@@ -7,3 +7,9 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }
+
+/* CodeMirror line highlight */
+.CodeMirror .highlight-line {
+  background-color: #fef3c7 !important;
+  transition: background-color 0.3s;
+}
