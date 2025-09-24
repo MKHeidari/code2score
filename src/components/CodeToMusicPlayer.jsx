@@ -4,8 +4,9 @@ import 'codemirror/lib/codemirror.css';
 import 'codemirror/mode/javascript/javascript';
 import 'codemirror/mode/python/python';
 import 'codemirror/mode/clike/clike';
+import 'codemirror/theme/monokai.css'; // for dark theme
 import * as Vex from 'vexflow';
-import * as Tone from 'tone';
+import * as Tone from 'tone'; // Tone.js v13 — use Tone.* syntax
 
 import {
   getKeySignatureByExtension,
@@ -28,41 +29,48 @@ export default function CodeToMusicPlayer() {
   const synthCache = useRef({});
   const { darkMode } = useTheme();
 
+  // Get or create synth by type (Tone.js v13)
   const getSynth = (type) => {
-    if (synthCache.current[type]) return synthCache.current[type];
+    if (synthCache.current[type]) {
+      return synthCache.current[type];
+    }
 
     let synth;
     switch (type) {
       case 'strings':
-        synth = new Tone.PolySynth(Tone.Synth, {
+        synth = new Tone.PolySynth(4, Tone.Synth, {
           oscillator: { type: 'triangle' },
           envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
         });
         break;
       case 'pluck':
-        synth = new Tone.PolySynth(Tone.PluckSynth);
+        synth = new Tone.PolySynth(4, Tone.PluckSynth);
         break;
       case 'marimba':
-        synth = new Tone.PolySynth(Tone.MetalSynth);
+        synth = new Tone.PolySynth(4, Tone.MetalSynth);
         break;
       case 'organ':
-        synth = new Tone.PolySynth(Tone.Synth, {
+        synth = new Tone.PolySynth(4, Tone.Synth, {
           oscillator: { type: 'sine' },
           envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
         });
         break;
       case 'piano':
       default:
-        synth = new Tone.PolySynth(Tone.Synth);
+        synth = new Tone.PolySynth(4, Tone.Synth);
     }
 
-    synth.toDestination();
+    synth.toMaster(); // v13 uses .toMaster()
     synthCache.current[type] = synth;
     return synth;
   };
 
+  // Initialize CodeMirror safely
   useEffect(() => {
     if (!editorRef.current) return;
+
+    // Clear container first (safety for HMR)
+    editorRef.current.innerHTML = '';
 
     const editor = CodeMirror(editorRef.current, {
       value: `function hello() {\n  console.log("Hello, world!");\n    if (true) {\n      return true;\n    }\n}`,
@@ -73,129 +81,160 @@ export default function CodeToMusicPlayer() {
     });
 
     const analyzeCode = () => {
-      const content = editor.getValue();
-      const lines = content.split('\n').filter(line => line.trim() !== '');
+      try {
+        const content = editor.getValue();
+        const lines = content.split('\n').filter(line => line.trim() !== '');
 
-      const avgLength = lines.reduce((sum, line) => sum + line.length, 0) / lines.length;
-      const timeSig = getTimeSignatureByAvgLength(avgLength);
-      const keySig = getKeySignatureByExtension(filename);
+        if (lines.length === 0) {
+          setNotes([]);
+          return;
+        }
 
-      const analyzed = lines.map((line, index) => {
-        const length = line.length;
-        const lastChar = line.slice(-1);
-        const { velocity, octaveShift } = getVelocityAndOctaveByIndent(line);
-        const instrument = getInstrumentByKeyword(line);
+        const avgLength = lines.reduce((sum, line) => sum + line.length, 0) / lines.length;
+        const timeSig = getTimeSignatureByAvgLength(avgLength);
+        const keySig = getKeySignatureByExtension(filename);
 
-        const basePitch = 60 + octaveShift * 12;
-        const pitchOffset = Math.min(Math.floor(length / 5), 12);
-        const midiNote = basePitch + pitchOffset;
-        let noteName = Tone.Frequency(midiNote, "midi").toNote();
+        const analyzed = lines.map((line, index) => {
+          const length = line.length;
+          const lastChar = line.slice(-1);
+          const { velocity, octaveShift } = getVelocityAndOctaveByIndent(line);
+          const instrument = getInstrumentByKeyword(line);
 
-        // 🔑 SCALE ENFORCEMENT!
-        noteName = constrainNoteToKey(noteName, keySig);
+          const basePitch = 60 + octaveShift * 12;
+          const pitchOffset = Math.min(Math.floor(length / 5), 12);
+          const midiNote = basePitch + pitchOffset;
+          let noteName = Tone.Frequency(midiNote, 'midi').toNote();
 
-        let duration = "4n";
-        if (lastChar === '}') duration = "2n";
-        if (lastChar === ';') duration = "4n";
-        if (lastChar === ':') duration = "8n";
+          // Enforce scale
+          noteName = constrainNoteToKey(noteName, keySig);
 
-        return {
-          line: index + 1,
-          content: line,
-          length,
-          lastChar,
-          midiNote,
-          noteName,
-          duration,
-          velocity,
-          instrument,
-          timeSig,
-          keySig,
-        };
-      });
+          let duration = '4n';
+          if (lastChar === '}') duration = '2n';
+          if (lastChar === ';') duration = '4n';
+          if (lastChar === ':') duration = '8n';
 
-      setNotes(analyzed);
+          return {
+            line: index + 1,
+            content: line,
+            length,
+            lastChar,
+            midiNote,
+            noteName,
+            duration,
+            velocity,
+            instrument,
+            timeSig,
+            keySig,
+          };
+        });
+
+        setNotes(analyzed);
+      } catch (error) {
+        console.error('[CodeToMusicPlayer] Error analyzing code:', error);
+        setNotes([]);
+      }
     };
 
     editor.on('change', analyzeCode);
     analyzeCode();
 
-    // Cleanup
+    // ✅ SAFE CLEANUP FOR CODEMIRROR 5:
     return () => {
-      editor.toTextArea();
+      // Optional: Clear container to help GC (no toTextArea!)
+      if (editorRef.current) {
+        editorRef.current.innerHTML = '';
+      }
+      // Synths will be garbage-collected; no explicit dispose needed for demo
     };
   }, [filename, darkMode]);
 
+  // Render VexFlow staff
   useEffect(() => {
     if (!canvasRef.current || notes.length === 0) return;
 
-    const canvas = canvasRef.current;
-    const renderer = new VF.Renderer(canvas, VF.Renderer.Backends.SVG);
-    renderer.resize(800, 300);
+    try {
+      const canvas = canvasRef.current;
+      const renderer = new VF.Renderer(canvas, VF.Renderer.Backends.SVG);
+      renderer.resize(800, 300);
 
-    const context = renderer.getContext();
-    context.setBackgroundFillStyle(darkMode ? "#1f2937" : "#f9fafb");
-    context.setStrokeStyle(darkMode ? "#f9fafb" : "#111827");
-    context.setFont("Arial", 14, "");
+      const context = renderer.getContext();
+      context.setBackgroundFillStyle(darkMode ? '#1f2937' : '#f9fafb');
+      context.setStrokeStyle(darkMode ? '#f9fafb' : '#111827');
+      context.setFont('Arial', 14, '');
 
-    const firstNote = notes[0];
-    const stave = new VF.Stave(20, 20, 750);
-    stave
-      .addClef("treble")
-      .addTimeSignature(firstNote.timeSig)
-      .addKeySignature(firstNote.keySig)
-      .setContext(context)
-      .draw();
+      const firstNote = notes[0];
+      const stave = new VF.Stave(20, 20, 750);
+      stave
+        .addClef('treble')
+        .addTimeSignature(firstNote.timeSig)
+        .addKeySignature(firstNote.keySig)
+        .setContext(context)
+        .draw();
 
-    const vexNotes = notes.map(note => {
-      const vfnote = new VF.StaveNote({
-        clef: "treble",
-        keys: [note.noteName],
-        duration: note.duration.replace('n', ''),
+      const vexNotes = notes.map(note => {
+        const vfnote = new VF.StaveNote({
+          clef: 'treble',
+          keys: [note.noteName],
+          duration: note.duration.replace('n', ''),
+        });
+
+        if (note.velocity > 0.7) {
+          vfnote.addModifier(new VF.Annotation('f').setFont('Arial', 12), 0);
+        } else if (note.velocity < 0.4) {
+          vfnote.addModifier(new VF.Annotation('p').setFont('Arial', 12), 0);
+        }
+
+        return vfnote;
       });
 
-      if (note.velocity > 0.7) {
-        vfnote.addModifier(new VF.Annotation("f").setFont("Arial", 12), 0);
-      } else if (note.velocity < 0.4) {
-        vfnote.addModifier(new VF.Annotation("p").setFont("Arial", 12), 0);
-      }
+      const beats = parseInt(firstNote.timeSig.split('/')[0]);
+      const beatValue = parseInt(firstNote.timeSig.split('/')[1]);
+      const voice = new VF.Voice({ num_beats: beats, beat_value: beatValue }).setStrict(false);
+      voice.addTickables(vexNotes);
 
-      return vfnote;
-    });
-
-    const voice = new VF.Voice({
-      num_beats: parseInt(firstNote.timeSig.split('/')[0]),
-      beat_value: parseInt(firstNote.timeSig.split('/')[1])
-    }).setStrict(false);
-
-    voice.addTickables(vexNotes);
-    const formatter = new VF.Formatter().joinVoices([voice]).format([voice], 700);
-    voice.draw(context, stave);
+      const formatter = new VF.Formatter().joinVoices([voice]).format([voice], 700);
+      voice.draw(context, stave);
+    } catch (error) {
+      console.error('[CodeToMusicPlayer] Error rendering VexFlow:', error);
+    }
   }, [notes, darkMode]);
 
+  // Play notes with highlighting
   const playNotes = async () => {
     if (notes.length === 0 || isPlaying) return;
 
     setIsPlaying(true);
-    await Tone.start();
+    try {
+      await Tone.start(); // Required for user interaction
+    } catch (err) {
+      console.error('Tone.js start failed:', err);
+      setIsPlaying(false);
+      return;
+    }
 
     const now = Tone.now();
     let time = now;
-    const editor = editorRef.current?.CodeMirror;
+    const editor = window.editorInstance || null; // Not reliable — use ref instead
+
+    // Store editor instance temporarily (CodeMirror doesn't expose globally)
+    const cmEditor = editorRef.current?.CodeMirror;
 
     notes.forEach((note, index) => {
       const synth = getSynth(note.instrument);
       synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
 
-      setTimeout(() => {
-        if (editor) {
-          editor.setCursor({ line: index, ch: 0 });
-          editor.addLineClass(index, 'wrap', 'highlight-line');
+      // Highlight line
+      if (cmEditor) {
+        try {
+          cmEditor.setCursor({ line: index, ch: 0 });
+          cmEditor.addLineClass(index, 'wrap', 'highlight-line');
           setTimeout(() => {
-            editor.removeLineClass(index, 'wrap', 'highlight-line');
+            cmEditor.removeLineClass(index, 'wrap', 'highlight-line');
           }, Tone.Time(note.duration).toMilliseconds() + 100);
+        } catch (e) {
+          // Ignore highlighting errors
         }
-      }, (time - now) * 1000);
+      }
 
       time += Tone.Time(note.duration).toSeconds() + 0.1;
     });
@@ -207,7 +246,11 @@ export default function CodeToMusicPlayer() {
 
   const exportMIDI = () => {
     if (notes.length === 0) return;
-    generateMIDI(notes, 120); // 120 BPM
+    try {
+      generateMIDI(notes, 120);
+    } catch (error) {
+      console.error('MIDI export failed:', error);
+    }
   };
 
   const handleFileTypeChange = (e) => {
@@ -319,7 +362,9 @@ export default function CodeToMusicPlayer() {
             📊 Debug: Scale-Constrained Notes & Mapping
           </summary>
           <div style={{ fontSize: '0.875rem', lineHeight: '1.6', marginTop: '1rem' }}>
-            <p><strong>Time Sig:</strong> {notes[0]?.timeSig} | <strong>Key:</strong> {notes[0]?.keySig} → Scale: {getScaleNotes(notes[0]?.keySig).join(', ')}</p>
+            <p>
+              <strong>Time Sig:</strong> {notes[0]?.timeSig} | <strong>Key:</strong> {notes[0]?.keySig}
+            </p>
             <ul style={{ paddingLeft: '1.25rem' }}>
               {notes.map((note, i) => (
                 <li key={i}>
