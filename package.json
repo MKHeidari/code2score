@@ -1,7 +1,19 @@
-"dependencies":{
-  "codemirror": "^5.65.14",
-  "react": "^18.2.0",
-  "react-dom": "^18.2.0",
-  "tone": "^14.7.77",
-  "vexflow": "^4.0.0"
+{
+  "name": "code2score",
+  "version": "1.0.0",
+  "description": "A music-themed code-to-score visualizer",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "codemirror": "^5.65.14",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tone": "^14.7.77",
+    "vexflow": "^4.0.0"
+  }
 }
