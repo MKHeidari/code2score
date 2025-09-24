@@ -6,7 +6,18 @@ import 'codemirror/mode/python/python';
 import 'codemirror/mode/clike/clike';
 import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
-import * as Tone from 'tone'; // Tone.js v13.8.25
+
+// ✅ EXPLICIT IMPORTS FOR TONE.JS v13
+import {
+  PolySynth,
+  Synth,
+  PluckSynth,
+  MetalSynth,
+  start,
+  now,
+  Time,
+  Frequency
+} from 'tone';
 
 import {
   getKeySignatureByExtension,
@@ -30,54 +41,56 @@ export default function CodeToMusicPlayer() {
   const { darkMode } = useTheme();
 
   // ✅ CORRECT getSynth for Tone.js v13
-  const getSynth = (type) => {
-    if (synthCache.current[type]) {
-      return synthCache.current[type];
-    }
+  // At the top of the file, you MUST have:
+// import { PolySynth, Synth, PluckSynth, MetalSynth } from 'tone';
 
-    let SynthClass;
-    let synthOptions = {};
+const getSynth = (type) => {
+  if (synthCache.current[type]) {
+    return synthCache.current[type];
+  }
 
-    switch (type) {
-      case 'strings':
-        SynthClass = Tone.Synth;
+  let SynthClass;
+  let synthOptions = {};
+
+  switch (type) {
+    case 'strings':
+    case 'organ':
+    case 'piano':
+    default:
+      SynthClass = Synth;
+      if (type === 'strings') {
         synthOptions = {
           oscillator: { type: 'triangle' },
           envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
         };
-        break;
-      case 'pluck':
-        SynthClass = Tone.PluckSynth;
-        synthOptions = {};
-        break;
-      case 'marimba':
-        SynthClass = Tone.MetalSynth;
-        synthOptions = {};
-        break;
-      case 'organ':
-        SynthClass = Tone.Synth;
+      } else if (type === 'organ') {
         synthOptions = {
           oscillator: { type: 'sine' },
           envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
         };
-        break;
-      case 'piano':
-      default:
-        SynthClass = Tone.Synth;
-        synthOptions = {};
-    }
+      }
+      break;
+    case 'pluck':
+      SynthClass = PluckSynth;
+      synthOptions = {};
+      break;
+    case 'marimba':
+      SynthClass = MetalSynth;
+      synthOptions = {};
+      break;
+  }
 
-    // ✅ v13 PolySynth signature: PolySynth(SynthClass, options)
-    const polySynth = new Tone.PolySynth(SynthClass, {
-      ...synthOptions,
-      voices: 6,    // polyphony
-      volume: -12   // in dB
-    });
+  // ✅ Now SynthClass is guaranteed to be a valid class
+  const polySynth = new PolySynth(SynthClass, {
+    ...synthOptions,
+    voices: 6,
+    volume: -12
+  });
 
-    polySynth.toMaster(); // v13 uses .toMaster()
-    synthCache.current[type] = polySynth;
-    return polySynth;
-  };
+  polySynth.toMaster();
+  synthCache.current[type] = polySynth;
+  return polySynth;
+};
 
   useEffect(() => {
     if (!editorRef.current) return;
