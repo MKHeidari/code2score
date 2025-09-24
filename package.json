@@ -13,7 +13,7 @@
     "codemirror": "^5.65.14",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "tone": "^13.8.25",
+    "tone": "13.8.25",
     "vexflow": "^4.0.0"
   },
   "browserslist": {
