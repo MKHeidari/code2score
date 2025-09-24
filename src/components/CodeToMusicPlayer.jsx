@@ -30,40 +30,54 @@ export default function CodeToMusicPlayer() {
   const { darkMode } = useTheme();
 
   // Get or create synth by type (Tone.js v13)
-  const getSynth = (type) => {
-    if (synthCache.current[type]) {
-      return synthCache.current[type];
-    }
+const getSynth = (type) => {
+  if (synthCache.current[type]) {
+    return synthCache.current[type];
+  }
 
-    let synth;
-    switch (type) {
-      case 'strings':
-        synth = new Tone.PolySynth(4, Tone.Synth, {
-          oscillator: { type: 'triangle' },
-          envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
-        });
-        break;
-      case 'pluck':
-        synth = new Tone.PolySynth(4, Tone.PluckSynth);
-        break;
-      case 'marimba':
-        synth = new Tone.PolySynth(4, Tone.MetalSynth);
-        break;
-      case 'organ':
-        synth = new Tone.PolySynth(4, Tone.Synth, {
-          oscillator: { type: 'sine' },
-          envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
-        });
-        break;
-      case 'piano':
-      default:
-        synth = new Tone.PolySynth(4, Tone.Synth);
-    }
+  let SynthClass;
+  let options = {};
 
-    synth.toMaster(); // v13 uses .toMaster()
-    synthCache.current[type] = synth;
-    return synth;
-  };
+  switch (type) {
+    case 'strings':
+      SynthClass = Tone.Synth;
+      options = {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
+      };
+      break;
+    case 'pluck':
+      SynthClass = Tone.PluckSynth;
+      options = {};
+      break;
+    case 'marimba':
+      SynthClass = Tone.MetalSynth;
+      options = {};
+      break;
+    case 'organ':
+      SynthClass = Tone.Synth;
+      options = {
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
+      };
+      break;
+    case 'piano':
+    default:
+      SynthClass = Tone.Synth;
+      options = {};
+  }
+
+  // ✅ CORRECT v13 SYNTAX:
+  const synth = new Tone.PolySynth(SynthClass, {
+    ...options,
+    voices: 6, // polyphony
+    volume: -12
+  });
+
+  synth.toMaster();
+  synthCache.current[type] = synth;
+  return synth;
+};
 
   // Initialize CodeMirror safely
   useEffect(() => {
