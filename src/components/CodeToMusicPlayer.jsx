@@ -5,7 +5,16 @@ import 'codemirror/mode/javascript/javascript';
 import 'codemirror/mode/python/python';
 import 'codemirror/mode/clike/clike';
 import * as Vex from 'vexflow';
-import * as Tone from 'tone';
+import {
+  PolySynth,
+  Synth,
+  PluckSynth,
+  MetalSynth,
+  start,
+  now,
+  Time,
+  Frequency
+} from 'tone';
 
 import {
   getKeySignatureByExtension,
@@ -34,26 +43,26 @@ export default function CodeToMusicPlayer() {
     let synth;
     switch (type) {
       case 'strings':
-        synth = new Tone.PolySynth(Tone.Synth, {
+        synth = new PolySynth(Synth, {
           oscillator: { type: 'triangle' },
           envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
         });
         break;
       case 'pluck':
-        synth = new Tone.PolySynth(Tone.PluckSynth);
+        synth = new PolySynth(PluckSynth);
         break;
       case 'marimba':
-        synth = new Tone.PolySynth(Tone.MetalSynth);
+        synth = new PolySynth(MetalSynth);
         break;
       case 'organ':
-        synth = new Tone.PolySynth(Tone.Synth, {
+        synth = new PolySynth(Synth, {
           oscillator: { type: 'sine' },
           envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
         });
         break;
       case 'piano':
       default:
-        synth = new Tone.PolySynth(Tone.Synth);
+        synth = new PolySynth(Synth);
     }
 
     synth.toDestination();
@@ -89,7 +98,7 @@ export default function CodeToMusicPlayer() {
         const basePitch = 60 + octaveShift * 12;
         const pitchOffset = Math.min(Math.floor(length / 5), 12);
         const midiNote = basePitch + pitchOffset;
-        let noteName = Tone.Frequency(midiNote, "midi").toNote();
+        let noteName = Frequency(midiNote, "midi").toNote();
 
         // 🔑 SCALE ENFORCEMENT!
         noteName = constrainNoteToKey(noteName, keySig);
@@ -177,9 +186,9 @@ export default function CodeToMusicPlayer() {
     if (notes.length === 0 || isPlaying) return;
 
     setIsPlaying(true);
-    await Tone.start();
+    await start();
 
-    const now = Tone.now();
+    const now = now();
     let time = now;
     const editor = editorRef.current?.CodeMirror;
 
@@ -193,11 +202,11 @@ export default function CodeToMusicPlayer() {
           editor.addLineClass(index, 'wrap', 'highlight-line');
           setTimeout(() => {
             editor.removeLineClass(index, 'wrap', 'highlight-line');
-          }, Tone.Time(note.duration).toMilliseconds() + 100);
+          }, Time(note.duration).toMilliseconds() + 100);
         }
       }, (time - now) * 1000);
 
-      time += Tone.Time(note.duration).toSeconds() + 0.1;
+      time += Time(note.duration).toSeconds() + 0.1;
     });
 
     setTimeout(() => {
