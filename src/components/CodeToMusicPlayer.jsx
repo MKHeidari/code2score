@@ -1,3 +1,5 @@
+// src/components/CodeToMusicPlayer.jsx
+
 import React, { useRef, useState, useEffect } from 'react';
 import CodeMirror from 'codemirror';
 import 'codemirror/lib/codemirror.css';
@@ -7,17 +9,10 @@ import 'codemirror/mode/clike/clike';
 import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
 
-// ✅ EXPLICIT IMPORTS FOR TONE.JS v13
-import {
-  PolySynth,
-  Synth,
-  PluckSynth,
-  MetalSynth,
-  start,
-  now,
-  Time,
-  Frequency
-} from 'tone';
+// ✅ IMPORT FULL TONE.JS v13 BUNDLE (includes ALL synths)
+import 'tone/build/Tone'; // This defines global `Tone`
+
+// Now we can safely use Tone.PolySynth, Tone.PluckSynth, etc.
 
 import {
   getKeySignatureByExtension,
@@ -40,62 +35,58 @@ export default function CodeToMusicPlayer() {
   const synthCache = useRef({});
   const { darkMode } = useTheme();
 
-  // ✅ CORRECT getSynth for Tone.js v13
-  // At the top of the file, you MUST have:
-// import { PolySynth, Synth, PluckSynth, MetalSynth } from 'tone';
+  const getSynth = (type) => {
+    if (synthCache.current[type]) {
+      return synthCache.current[type];
+    }
 
-const getSynth = (type) => {
-  if (synthCache.current[type]) {
-    return synthCache.current[type];
-  }
+    let SynthClass;
+    let options = {};
 
-  let SynthClass;
-  let synthOptions = {};
-
-  switch (type) {
-    case 'strings':
-    case 'organ':
-    case 'piano':
-    default:
-      SynthClass = Synth;
-      if (type === 'strings') {
-        synthOptions = {
+    switch (type) {
+      case 'strings':
+        SynthClass = Tone.Synth;
+        options = {
           oscillator: { type: 'triangle' },
           envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
         };
-      } else if (type === 'organ') {
-        synthOptions = {
+        break;
+      case 'pluck':
+        SynthClass = Tone.PluckSynth;
+        options = {};
+        break;
+      case 'marimba':
+        SynthClass = Tone.MetalSynth;
+        options = {};
+        break;
+      case 'organ':
+        SynthClass = Tone.Synth;
+        options = {
           oscillator: { type: 'sine' },
           envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
         };
-      }
-      break;
-    case 'pluck':
-      SynthClass = PluckSynth;
-      synthOptions = {};
-      break;
-    case 'marimba':
-      SynthClass = MetalSynth;
-      synthOptions = {};
-      break;
-  }
+        break;
+      case 'piano':
+      default:
+        SynthClass = Tone.Synth;
+        options = {};
+    }
 
-  // ✅ Now SynthClass is guaranteed to be a valid class
-  const polySynth = new PolySynth(SynthClass, {
-    ...synthOptions,
-    voices: 6,
-    volume: -12
-  });
+    // ✅ v13: PolySynth(SynthClass, options)
+    const synth = new Tone.PolySynth(SynthClass, {
+      ...options,
+      voices: 6,
+      volume: -12
+    });
 
-  polySynth.toMaster();
-  synthCache.current[type] = polySynth;
-  return polySynth;
-};
+    synth.toMaster(); // v13 uses .toMaster()
+    synthCache.current[type] = synth;
+    return synth;
+  };
 
   useEffect(() => {
     if (!editorRef.current) return;
 
-    // Clear container (safety for HMR)
     editorRef.current.innerHTML = '';
 
     const editor = CodeMirror(editorRef.current, {
@@ -163,7 +154,6 @@ const getSynth = (type) => {
     editor.on('change', analyzeCode);
     analyzeCode();
 
-    // ✅ SAFE CLEANUP FOR CODEMIRROR 5
     return () => {
       if (editorRef.current) {
         editorRef.current.innerHTML = '';
@@ -226,7 +216,7 @@ const getSynth = (type) => {
 
     setIsPlaying(true);
     try {
-      await Tone.start();
+      await Tone.start(); // ✅ Works because Tone is globally available
     } catch (err) {
       console.error('Tone.js start failed:', err);
       setIsPlaying(false);
@@ -249,7 +239,7 @@ const getSynth = (type) => {
             cmEditor.removeLineClass(index, 'wrap', 'highlight-line');
           }, Tone.Time(note.duration).toMilliseconds() + 100);
         } catch (e) {
-          // Ignore highlighting errors
+          // Ignore
         }
       }
 
