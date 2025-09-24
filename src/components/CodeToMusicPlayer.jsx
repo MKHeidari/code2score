@@ -4,9 +4,9 @@ import 'codemirror/lib/codemirror.css';
 import 'codemirror/mode/javascript/javascript';
 import 'codemirror/mode/python/python';
 import 'codemirror/mode/clike/clike';
-import 'codemirror/theme/monokai.css'; // for dark theme
+import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
-import * as Tone from 'tone'; // Tone.js v13 — use Tone.* syntax
+import * as Tone from 'tone'; // Tone.js v13.8.25
 
 import {
   getKeySignatureByExtension,
@@ -29,61 +29,60 @@ export default function CodeToMusicPlayer() {
   const synthCache = useRef({});
   const { darkMode } = useTheme();
 
-  // Get or create synth by type (Tone.js v13)
-const getSynth = (type) => {
-  if (synthCache.current[type]) {
-    return synthCache.current[type];
-  }
+  // ✅ CORRECT getSynth for Tone.js v13
+  const getSynth = (type) => {
+    if (synthCache.current[type]) {
+      return synthCache.current[type];
+    }
 
-  let SynthClass;
-  let options = {};
+    let SynthClass;
+    let synthOptions = {};
 
-  switch (type) {
-    case 'strings':
-      SynthClass = Tone.Synth;
-      options = {
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
-      };
-      break;
-    case 'pluck':
-      SynthClass = Tone.PluckSynth;
-      options = {};
-      break;
-    case 'marimba':
-      SynthClass = Tone.MetalSynth;
-      options = {};
-      break;
-    case 'organ':
-      SynthClass = Tone.Synth;
-      options = {
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
-      };
-      break;
-    case 'piano':
-    default:
-      SynthClass = Tone.Synth;
-      options = {};
-  }
+    switch (type) {
+      case 'strings':
+        SynthClass = Tone.Synth;
+        synthOptions = {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
+        };
+        break;
+      case 'pluck':
+        SynthClass = Tone.PluckSynth;
+        synthOptions = {};
+        break;
+      case 'marimba':
+        SynthClass = Tone.MetalSynth;
+        synthOptions = {};
+        break;
+      case 'organ':
+        SynthClass = Tone.Synth;
+        synthOptions = {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
+        };
+        break;
+      case 'piano':
+      default:
+        SynthClass = Tone.Synth;
+        synthOptions = {};
+    }
 
-  // ✅ CORRECT v13 SYNTAX:
-  const synth = new Tone.PolySynth(SynthClass, {
-    ...options,
-    voices: 6, // polyphony
-    volume: -12
-  });
+    // ✅ v13 PolySynth signature: PolySynth(SynthClass, options)
+    const polySynth = new Tone.PolySynth(SynthClass, {
+      ...synthOptions,
+      voices: 6,    // polyphony
+      volume: -12   // in dB
+    });
 
-  synth.toMaster();
-  synthCache.current[type] = synth;
-  return synth;
-};
+    polySynth.toMaster(); // v13 uses .toMaster()
+    synthCache.current[type] = polySynth;
+    return polySynth;
+  };
 
-  // Initialize CodeMirror safely
   useEffect(() => {
     if (!editorRef.current) return;
 
-    // Clear container first (safety for HMR)
+    // Clear container (safety for HMR)
     editorRef.current.innerHTML = '';
 
     const editor = CodeMirror(editorRef.current, {
@@ -119,7 +118,6 @@ const getSynth = (type) => {
           const midiNote = basePitch + pitchOffset;
           let noteName = Tone.Frequency(midiNote, 'midi').toNote();
 
-          // Enforce scale
           noteName = constrainNoteToKey(noteName, keySig);
 
           let duration = '4n';
@@ -152,17 +150,14 @@ const getSynth = (type) => {
     editor.on('change', analyzeCode);
     analyzeCode();
 
-    // ✅ SAFE CLEANUP FOR CODEMIRROR 5:
+    // ✅ SAFE CLEANUP FOR CODEMIRROR 5
     return () => {
-      // Optional: Clear container to help GC (no toTextArea!)
       if (editorRef.current) {
         editorRef.current.innerHTML = '';
       }
-      // Synths will be garbage-collected; no explicit dispose needed for demo
     };
   }, [filename, darkMode]);
 
-  // Render VexFlow staff
   useEffect(() => {
     if (!canvasRef.current || notes.length === 0) return;
 
@@ -213,13 +208,12 @@ const getSynth = (type) => {
     }
   }, [notes, darkMode]);
 
-  // Play notes with highlighting
   const playNotes = async () => {
     if (notes.length === 0 || isPlaying) return;
 
     setIsPlaying(true);
     try {
-      await Tone.start(); // Required for user interaction
+      await Tone.start();
     } catch (err) {
       console.error('Tone.js start failed:', err);
       setIsPlaying(false);
@@ -228,16 +222,12 @@ const getSynth = (type) => {
 
     const now = Tone.now();
     let time = now;
-    const editor = window.editorInstance || null; // Not reliable — use ref instead
-
-    // Store editor instance temporarily (CodeMirror doesn't expose globally)
     const cmEditor = editorRef.current?.CodeMirror;
 
     notes.forEach((note, index) => {
       const synth = getSynth(note.instrument);
       synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
 
-      // Highlight line
       if (cmEditor) {
         try {
           cmEditor.setCursor({ line: index, ch: 0 });
