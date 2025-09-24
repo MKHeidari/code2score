@@ -5,16 +5,7 @@ import 'codemirror/mode/javascript/javascript';
 import 'codemirror/mode/python/python';
 import 'codemirror/mode/clike/clike';
 import * as Vex from 'vexflow';
-import {
-  PolySynth,
-  Synth,
-  PluckSynth,
-  MetalSynth,
-  start,
-  now,
-  Time,
-  Frequency
-} from 'tone';
+import Tone from 'tone';
 
 import {
   getKeySignatureByExtension,
@@ -22,6 +13,7 @@ import {
   getInstrumentByKeyword,
   getVelocityAndOctaveByIndent,
   constrainNoteToKey,
+  getScaleNotes
 } from './utils/musicMapper';
 import { generateMIDI } from './utils/midiGenerator';
 import { useTheme } from '../context/ThemeContext';
@@ -43,26 +35,26 @@ export default function CodeToMusicPlayer() {
     let synth;
     switch (type) {
       case 'strings':
-        synth = new PolySynth(Synth, {
+        synth = new Tone.PolySynth(Tone.Synth, {
           oscillator: { type: 'triangle' },
           envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
         });
         break;
       case 'pluck':
-        synth = new PolySynth(PluckSynth);
+        synth = new Tone.PolySynth(Tone.PluckSynth);
         break;
       case 'marimba':
-        synth = new PolySynth(MetalSynth);
+        synth = new Tone.PolySynth(Tone.MetalSynth);
         break;
       case 'organ':
-        synth = new PolySynth(Synth, {
+        synth = new Tone.PolySynth(Tone.Synth, {
           oscillator: { type: 'sine' },
           envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
         });
         break;
       case 'piano':
       default:
-        synth = new PolySynth(Synth);
+        synth = new Tone.PolySynth(Tone.Synth);
     }
 
     synth.toDestination();
@@ -98,9 +90,8 @@ export default function CodeToMusicPlayer() {
         const basePitch = 60 + octaveShift * 12;
         const pitchOffset = Math.min(Math.floor(length / 5), 12);
         const midiNote = basePitch + pitchOffset;
-        let noteName = Frequency(midiNote, "midi").toNote();
+        let noteName = Tone.Frequency(midiNote, "midi").toNote();
 
-        // 🔑 SCALE ENFORCEMENT!
         noteName = constrainNoteToKey(noteName, keySig);
 
         let duration = "4n";
@@ -129,7 +120,6 @@ export default function CodeToMusicPlayer() {
     editor.on('change', analyzeCode);
     analyzeCode();
 
-    // Cleanup
     return () => {
       editor.toTextArea();
     };
@@ -186,10 +176,10 @@ export default function CodeToMusicPlayer() {
     if (notes.length === 0 || isPlaying) return;
 
     setIsPlaying(true);
-    await start();
+    await Tone.start();
 
-    const now = now();
-    let time = now;
+    const nowTime = Tone.now();
+    let time = nowTime;
     const editor = editorRef.current?.CodeMirror;
 
     notes.forEach((note, index) => {
@@ -202,21 +192,21 @@ export default function CodeToMusicPlayer() {
           editor.addLineClass(index, 'wrap', 'highlight-line');
           setTimeout(() => {
             editor.removeLineClass(index, 'wrap', 'highlight-line');
-          }, Time(note.duration).toMilliseconds() + 100);
+          }, Tone.Time(note.duration).toMilliseconds() + 100);
         }
-      }, (time - now) * 1000);
+      }, (time - nowTime) * 1000);
 
-      time += Time(note.duration).toSeconds() + 0.1;
+      time += Tone.Time(note.duration).toSeconds() + 0.1;
     });
 
     setTimeout(() => {
       setIsPlaying(false);
-    }, (time - now) * 1000);
+    }, (time - nowTime) * 1000);
   };
 
   const exportMIDI = () => {
     if (notes.length === 0) return;
-    generateMIDI(notes, 120); // 120 BPM
+    generateMIDI(notes, 120);
   };
 
   const handleFileTypeChange = (e) => {
@@ -224,25 +214,10 @@ export default function CodeToMusicPlayer() {
   };
 
   return (
-    <div style={{
-      background: 'var(--bg-secondary)',
-      padding: '2rem',
-      borderRadius: '12px',
-      boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-    }}>
+    <div style={{ background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
       <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={{ fontWeight: '500' }}>Simulate file type:</label>
-        <select
-          value={filename}
-          onChange={handleFileTypeChange}
-          style={{
-            padding: '0.5rem',
-            borderRadius: '6px',
-            border: '1px solid var(--border-color)',
-            background: 'var(--bg-primary)',
-            color: 'var(--text-primary)',
-          }}
-        >
+        <select value={filename} onChange={handleFileTypeChange} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
           <option value="example.js">JavaScript (.js)</option>
           <option value="example.py">Python (.py)</option>
           <option value="example.php">PHP (.php)</option>
@@ -251,18 +226,9 @@ export default function CodeToMusicPlayer() {
         </select>
       </div>
 
-      <div
-        ref={editorRef}
-        style={{
-          height: '220px',
-          border: '1px solid var(--border-color)',
-          borderRadius: '8px',
-          marginBottom: '1.5rem',
-          background: 'var(--bg-primary)',
-        }}
-      ></div>
+      <div ref={editorRef} style={{ height: '220px', border: '1px solid var(--border-color)', borderRadius: '8px', marginBottom: '1.5rem', background: 'var(--bg-primary)' }}></div>
 
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
         <button
           onClick={playNotes}
           disabled={isPlaying}
@@ -332,7 +298,7 @@ export default function CodeToMusicPlayer() {
             <ul style={{ paddingLeft: '1.25rem' }}>
               {notes.map((note, i) => (
                 <li key={i}>
-                  <strong>L{i+1}:</strong> <code>{note.content.trim()}</code> → 
+                  <strong>L{i + 1}:</strong> <code>{note.content.trim()}</code> → 
                   <span style={{ color: '#d946ef', fontWeight: '600' }}> {note.noteName}</span> (in-key) | 
                   <span style={{ color: '#059669' }}> {note.duration}</span> | 
                   <span style={{ color: '#dc2626' }}> vol: {note.velocity.toFixed(2)}</span> | 
