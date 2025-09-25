@@ -13,5 +13,8 @@
   },
   "devDependencies": {
     "gh-pages": "^6.2.0"
+  },
+  "scripts": {
+  "start": "react-scripts start"
   }
 }
