@@ -8,7 +8,7 @@
     "react-dom": "^18.2.0",
     "tone": "13.8.25",
     "vexflow": "^4.0.0",
-    "@tonaljs/tonal": "^4.12.0",
+    "@tonaljs/tonal": "^4.10.0",
     "file-saver": "^2.0.5"
   },
   "devDependencies": {
