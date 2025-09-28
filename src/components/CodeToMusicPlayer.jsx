@@ -9,11 +9,10 @@ import 'codemirror/mode/clike/clike';
 import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
 
-// ✅ IMPORT FULL TONE.JS v13 BUNDLE (includes ALL synths)
-import 'tone/build/Tone'; // This defines global `Tone`
+// ✅ Import full Tone.js v13 bundle (defines global `Tone`)
+import 'tone/build/Tone';
 
-// Now we can safely use Tone.PolySynth, Tone.PluckSynth, etc.
-
+// Utils
 import {
   getKeySignatureByExtension,
   getTimeSignatureByAvgLength,
@@ -26,6 +25,15 @@ import { useTheme } from '../context/ThemeContext';
 
 const VF = Vex.Flow;
 
+// 🔑 Pure helper: MIDI number → note name (e.g., 60 → "C4")
+function midiToNoteName(midi) {
+  if (midi < 0 || midi > 127) return 'C4';
+  const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const octave = Math.floor(midi / 12) - 1;
+  const noteIndex = midi % 12;
+  return notes[noteIndex] + octave;
+}
+
 export default function CodeToMusicPlayer() {
   const editorRef = useRef(null);
   const canvasRef = useRef(null);
@@ -35,6 +43,7 @@ export default function CodeToMusicPlayer() {
   const synthCache = useRef({});
   const { darkMode } = useTheme();
 
+  // ✅ Get synth using global Tone (only called after user gesture)
   const getSynth = (type) => {
     if (synthCache.current[type]) {
       return synthCache.current[type];
@@ -72,18 +81,18 @@ export default function CodeToMusicPlayer() {
         options = {};
     }
 
-    // ✅ v13: PolySynth(SynthClass, options)
     const synth = new Tone.PolySynth(SynthClass, {
       ...options,
       voices: 6,
       volume: -12
     });
 
-    synth.toMaster(); // v13 uses .toMaster()
+    synth.toMaster();
     synthCache.current[type] = synth;
     return synth;
   };
 
+  // ✅ Analyze code WITHOUT using Tone (safe on load)
   useEffect(() => {
     if (!editorRef.current) return;
 
@@ -120,8 +129,11 @@ export default function CodeToMusicPlayer() {
           const basePitch = 60 + octaveShift * 12;
           const pitchOffset = Math.min(Math.floor(length / 5), 12);
           const midiNote = basePitch + pitchOffset;
-          let noteName = Tone.Frequency(midiNote, 'midi').toNote();
 
+          // ✅ SAFE: No Tone used here
+          let noteName = midiToNoteName(midiNote);
+
+          // Enforce scale (only needs string like "C4")
           noteName = constrainNoteToKey(noteName, keySig);
 
           let duration = '4n';
@@ -161,6 +173,7 @@ export default function CodeToMusicPlayer() {
     };
   }, [filename, darkMode]);
 
+  // Render VexFlow staff
   useEffect(() => {
     if (!canvasRef.current || notes.length === 0) return;
 
@@ -211,12 +224,14 @@ export default function CodeToMusicPlayer() {
     }
   }, [notes, darkMode]);
 
+  // ✅ Play only after user click → complies with autoplay policy
   const playNotes = async () => {
     if (notes.length === 0 || isPlaying) return;
 
     setIsPlaying(true);
     try {
-      await Tone.start(); // ✅ Works because Tone is globally available
+      // ✅ This is allowed because it's inside a user-initiated handler
+      await Tone.start();
     } catch (err) {
       console.error('Tone.js start failed:', err);
       setIsPlaying(false);
