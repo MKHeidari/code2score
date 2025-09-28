@@ -203,20 +203,24 @@ function isValidVexFlowNote(note) {
   return /^([A-G](#)?)(\d)$/.test(note);
 }
 
+// Helper: Clean and validate note for VexFlow
+function cleanNoteForVexFlow(note) {
+  if (typeof note !== 'string') return 'C4';
+  
+  // Remove all whitespace and non-musical chars
+  let cleaned = note.trim().replace(/[^A-G#0-9]/g, '');
+  
+  // Enforce format: letter + optional # + digit (e.g., C4, C#4)
+  const match = cleaned.match(/^([A-G])(#?)(\d)$/);
+  if (!match) return 'C4';
+  
+  const [, letter, sharp, octave] = match;
+  return letter + sharp + octave;
+}
+      
 // In your VexFlow rendering:
 const vexNotes = notes.map(note => {
-  let safeNote = note.noteName;
-
-  // Fix common issues
-  if (typeof safeNote !== 'string') safeNote = 'C4';
-  safeNote = safeNote.trim();
-
-  // If invalid, fallback to C4
-  if (!isValidVexFlowNote(safeNote)) {
-    console.warn('Invalid note for VexFlow:', note.noteName, '→ using C4');
-    safeNote = 'C4';
-  }
-
+  const safeNote = cleanNoteForVexFlow(note.noteName);
   return new VF.StaveNote({
     clef: 'treble',
     keys: [safeNote],
@@ -240,45 +244,56 @@ const vexNotes = notes.map(note => {
 const playNotes = async () => {
   if (notes.length === 0 || isPlaying) return;
 
-  if (typeof window.Tone === 'undefined') {
-    alert('Audio engine failed to load. Please refresh.');
+  // ✅ GUARANTEED access
+  const Tone = window.Tone;
+  if (!Tone) {
+    console.error('Tone.js failed to load');
     return;
   }
 
   setIsPlaying(true);
   try {
-    await window.Tone.start();
+    await Tone.start();
   } catch (err) {
     console.error('Tone start failed:', err);
     setIsPlaying(false);
     return;
   }
 
-  const now = window.Tone.now();
+  const now = Tone.now();
   let time = now;
   const cmEditor = editorRef.current?.CodeMirror;
 
   notes.forEach((note, index) => {
-    // Create synth on-the-fly (simple, safe)
-    let synth;
+    let SynthClass;
+    let options = {};
+
     if (note.instrument === 'pluck') {
-      synth = new window.Tone.PolySynth(window.Tone.PluckSynth, { voices: 6 });
+      SynthClass = Tone.PluckSynth;
     } else if (note.instrument === 'marimba') {
-      synth = new window.Tone.PolySynth(window.Tone.MetalSynth, { voices: 6 });
-    } else if (note.instrument === 'strings' || note.instrument === 'organ') {
-      const opts = note.instrument === 'strings'
-        ? { oscillator: { type: 'triangle' }, envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 } }
-        : { oscillator: { type: 'sine' }, envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 } };
-      synth = new window.Tone.PolySynth(window.Tone.Synth, { ...opts, voices: 6 });
+      SynthClass = Tone.MetalSynth;
+    } else if (note.instrument === 'strings') {
+      SynthClass = Tone.Synth;
+      options = { oscillator: { type: 'triangle' }, envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 } };
+    } else if (note.instrument === 'organ') {
+      SynthClass = Tone.Synth;
+      options = { oscillator: { type: 'sine' }, envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 } };
     } else {
-      synth = new window.Tone.PolySynth(window.Tone.Synth, { voices: 6 });
+      SynthClass = Tone.Synth;
     }
+
+    // ✅ Safe: SynthClass is now guaranteed defined
+    const synth = new Tone.PolySynth(SynthClass, {
+      ...options,
+      voices: 6,
+      volume: -12
+    });
     synth.toMaster();
 
     synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
 
-    // ... highlighting code ...
-    time += window.Tone.Time(note.duration).toSeconds() + 0.1;
+    // Highlighting...
+    time += Tone.Time(note.duration).toSeconds() + 0.1;
   });
 
   setTimeout(() => setIsPlaying(false), (time - now) * 1000);
