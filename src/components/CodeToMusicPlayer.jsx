@@ -28,8 +28,7 @@ const VF = Vex.Flow;
 
 // 🔑 Pure helper: MIDI number → note name (e.g., 60 → "C4")
 function midiToNoteName(midi) {
-  if (midi < 0 || midi > 127) return 'C4';
-  // VexFlow requires sharps, not flats
+  if (typeof midi !== 'number' || midi < 0 || midi > 127) return 'C4';
   const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const octave = Math.floor(midi / 12) - 1;
   const note = midi % 12;
