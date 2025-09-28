@@ -101,22 +101,22 @@ export const getScaleNotes = (key = 'C') => {
   try {
     const isMinor = key.toLowerCase().includes('m') || ['Am', 'Em', 'Dm', 'Bm'].includes(key);
     const scaleType = isMinor ? 'minor' : 'major';
-    
-    // Force sharp notation
     const scale = Scale.get(`${key} ${scaleType}`);
-    if (!scale?.notes) return ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+    
+    if (!scale?.notes?.length) {
+      return ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+    }
 
-    // Convert flats to sharps (e.g., "Db" → "C#")
-    return scale.notes.map(note => {
-      const flatToSharp = {
-        'Db': 'C#',
-        'Eb': 'D#',
-        'Gb': 'F#',
-        'Ab': 'G#',
-        'Bb': 'A#'
-      };
-      return flatToSharp[note] || note;
-    });
+    // Convert flats to enharmonic sharps
+    const flatToSharp = {
+      'Db': 'C#',
+      'Eb': 'D#',
+      'Gb': 'F#',
+      'Ab': 'G#',
+      'Bb': 'A#'
+    };
+
+    return scale.notes.map(note => flatToSharp[note] || note);
   } catch (e) {
     return ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
   }
