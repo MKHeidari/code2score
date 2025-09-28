@@ -10,7 +10,6 @@ import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
 
 // ✅ Import Tone.js v13 — attaches to window.Tone
-import 'tone';
 
 import {
   getKeySignatureByExtension,
@@ -173,56 +172,52 @@ export default function CodeToMusicPlayer() {
 
   // ✅ Play audio ONLY after user click — complies with autoplay policy
   const playNotes = async () => {
-    if (notes.length === 0 || isPlaying) return;
+  if (notes.length === 0 || isPlaying) return;
 
-    // ✅ CRITICAL: Access Tone via window
-    const Tone = window.Tone;
-    if (!Tone) {
-      console.error('Tone.js failed to load. Please check your import.');
-      return;
-    }
+  setIsPlaying(true);
 
-    setIsPlaying(true);
-    try {
-      await Tone.start();
-    } catch (err) {
-      console.error('Tone start failed:', err);
-      setIsPlaying(false);
-      return;
-    }
+  try {
+    // ✅ DYNAMIC IMPORT: Load Tone.js ONLY when user clicks
+    const Tone = await import('tone');
+
+    // Start audio context (allowed after user gesture)
+    await Tone.start();
 
     const now = Tone.now();
     let time = now;
     const cmEditor = editorRef.current?.CodeMirror;
 
     notes.forEach((note, index) => {
-      // ✅ Create synth fresh — no caching, no undefined classes
-      let synth;
-      try {
-        if (note.instrument === 'pluck') {
-          synth = new Tone.PolySynth(Tone.PluckSynth, { voices: 6 });
-        } else if (note.instrument === 'marimba') {
-          synth = new Tone.PolySynth(Tone.MetalSynth, { voices: 6 });
-        } else if (note.instrument === 'strings') {
-          synth = new Tone.PolySynth(Tone.Synth, {
-            voices: 6,
-            oscillator: { type: 'triangle' },
-            envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
-          });
-        } else if (note.instrument === 'organ') {
-          synth = new Tone.PolySynth(Tone.Synth, {
-            voices: 6,
-            oscillator: { type: 'sine' },
-            envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
-          });
-        } else {
-          synth = new Tone.PolySynth(Tone.Synth, { voices: 6 });
-        }
-        synth.toMaster();
-      } catch (e) {
-        console.error('Failed to create synth:', e);
-        return;
+      let SynthClass;
+      let options = {};
+
+      if (note.instrument === 'pluck') {
+        SynthClass = Tone.PluckSynth;
+      } else if (note.instrument === 'marimba') {
+        SynthClass = Tone.MetalSynth;
+      } else if (note.instrument === 'strings') {
+        SynthClass = Tone.Synth;
+        options = {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
+        };
+      } else if (note.instrument === 'organ') {
+        SynthClass = Tone.Synth;
+        options = {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
+        };
+      } else {
+        SynthClass = Tone.Synth;
       }
+
+      // ✅ Now SynthClass is guaranteed defined
+      const synth = new Tone.PolySynth(SynthClass, {
+        ...options,
+        voices: 6,
+        volume: -12
+      });
+      synth.toMaster();
 
       synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
 
@@ -241,7 +236,12 @@ export default function CodeToMusicPlayer() {
     });
 
     setTimeout(() => setIsPlaying(false), (time - now) * 1000);
-  };
+  } catch (err) {
+    console.error('Failed to play notes:', err);
+    setIsPlaying(false);
+    alert('Audio engine failed to load. Please try again.');
+  }
+};
 
   const exportMIDI = () => {
     if (notes.length === 0) return;
