@@ -198,21 +198,20 @@ export default function CodeToMusicPlayer() {
         .setContext(context)
         .draw();
 
-      const vexNotes = notes.map(note => {
-        const vfnote = new VF.StaveNote({
-          clef: 'treble',
-          keys: [note.noteName],
-          duration: note.duration.replace('n', ''),
-        });
+// In VexFlow rendering:
+const vexNotes = notes.map(note => {
+  // ✅ Validate note name
+  if (!/^[A-G][#b]?\d$/.test(note.noteName)) {
+    console.warn('Invalid note name:', note.noteName, '→ using C4');
+    return new VF.StaveNote({ clef: 'treble', keys: ['C4'], duration: 'q' });
+  }
 
-        if (note.velocity > 0.7) {
-          vfnote.addModifier(new VF.Annotation('f').setFont('Arial', 12), 0);
-        } else if (note.velocity < 0.4) {
-          vfnote.addModifier(new VF.Annotation('p').setFont('Arial', 12), 0);
-        }
-
-        return vfnote;
-      });
+  return new VF.StaveNote({
+    clef: 'treble',
+    keys: [note.noteName],
+    duration: note.duration.replace('n', ''),
+  });
+});
 
       const beats = parseInt(firstNote.timeSig.split('/')[0]);
       const beatValue = parseInt(firstNote.timeSig.split('/')[1]);
@@ -230,16 +229,17 @@ export default function CodeToMusicPlayer() {
   const playNotes = async () => {
     if (notes.length === 0 || isPlaying) return;
 
+  // ✅ Ensure Tone is available
+  if (typeof Tone === 'undefined') {
+    console.error('Tone.js is not loaded');
+    return;
+  }
+
   setIsPlaying(true);
-
-  // ✅ Dynamically import Tone ONLY when needed (after user click)
-  const ToneModule = await import('tone');
-  const { PolySynth, Synth, PluckSynth, MetalSynth, start, now, Time } = ToneModule;
-
   try {
-    await start();
+    await Tone.start(); // Now safe
   } catch (err) {
-    console.error('Tone.js start failed:', err);
+    console.error('Tone start failed:', err);
     setIsPlaying(false);
     return;
   }
