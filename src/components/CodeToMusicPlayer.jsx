@@ -10,7 +10,7 @@ import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
 
 // ✅ Import full Tone.js v13 bundle (defines global `Tone`)
-import 'tone/build/Tone';
+// import 'tone/build/Tone';
 
 // Utils
 import {
@@ -28,10 +28,11 @@ const VF = Vex.Flow;
 // 🔑 Pure helper: MIDI number → note name (e.g., 60 → "C4")
 function midiToNoteName(midi) {
   if (midi < 0 || midi > 127) return 'C4';
+  // VexFlow requires sharps, not flats
   const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const octave = Math.floor(midi / 12) - 1;
-  const noteIndex = midi % 12;
-  return notes[noteIndex] + octave;
+  const note = midi % 12;
+  return notes[note] + octave;
 }
 
 export default function CodeToMusicPlayer() {
@@ -228,15 +229,19 @@ export default function CodeToMusicPlayer() {
   const playNotes = async () => {
     if (notes.length === 0 || isPlaying) return;
 
-    setIsPlaying(true);
-    try {
-      // ✅ This is allowed because it's inside a user-initiated handler
-      await Tone.start();
-    } catch (err) {
-      console.error('Tone.js start failed:', err);
-      setIsPlaying(false);
-      return;
-    }
+  setIsPlaying(true);
+
+  // ✅ Dynamically import Tone ONLY when needed (after user click)
+  const ToneModule = await import('tone');
+  const { PolySynth, Synth, PluckSynth, MetalSynth, start, now, Time } = ToneModule;
+
+  try {
+    await start();
+  } catch (err) {
+    console.error('Tone.js start failed:', err);
+    setIsPlaying(false);
+    return;
+  }
 
     const now = Tone.now();
     let time = now;
