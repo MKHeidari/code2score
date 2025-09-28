@@ -9,11 +9,9 @@ import 'codemirror/mode/clike/clike';
 import 'codemirror/theme/monokai.css';
 import * as Vex from 'vexflow';
 
-// ✅ Import full Tone.js v13 bundle (defines global `Tone`)
-// import 'tone/build/Tone';
+// ✅ Import Tone.js v13 — attaches to window.Tone
 import 'tone';
 
-// Utils
 import {
   getKeySignatureByExtension,
   getTimeSignatureByAvgLength,
@@ -26,7 +24,7 @@ import { useTheme } from '../context/ThemeContext';
 
 const VF = Vex.Flow;
 
-// 🔑 Pure helper: MIDI number → note name (e.g., 60 → "C4")
+// 🔑 Convert MIDI number → VexFlow-safe note (sharps only)
 function midiToNoteName(midi) {
   if (typeof midi !== 'number' || midi < 0 || midi > 127) return 'C4';
   const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -35,65 +33,22 @@ function midiToNoteName(midi) {
   return notes[note] + octave;
 }
 
+// 🔑 Sanitize note for VexFlow: remove bad chars, enforce C4/C#4 format
+function sanitizeNoteForVexFlow(note) {
+  if (typeof note !== 'string') return 'C4';
+  const cleaned = note.replace(/[^A-G#0-9]/g, '');
+  const match = cleaned.match(/^([A-G])(#?)(\d)$/);
+  return match ? match[1] + match[2] + match[3] : 'C4';
+}
+
 export default function CodeToMusicPlayer() {
   const editorRef = useRef(null);
   const canvasRef = useRef(null);
   const [notes, setNotes] = useState([]);
   const [filename, setFilename] = useState('example.js');
   const [isPlaying, setIsPlaying] = useState(false);
-  const synthCache = useRef({});
   const { darkMode } = useTheme();
 
-  // ✅ Get synth using global Tone (only called after user gesture)
-  const getSynth = (type) => {
-    if (synthCache.current[type]) {
-      return synthCache.current[type];
-    }
-
-    let SynthClass;
-    let options = {};
-
-    switch (type) {
-      case 'strings':
-        SynthClass = Tone.Synth;
-        options = {
-          oscillator: { type: 'triangle' },
-          envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
-        };
-        break;
-      case 'pluck':
-        SynthClass = Tone.PluckSynth;
-        options = {};
-        break;
-      case 'marimba':
-        SynthClass = Tone.MetalSynth;
-        options = {};
-        break;
-      case 'organ':
-        SynthClass = Tone.Synth;
-        options = {
-          oscillator: { type: 'sine' },
-          envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
-        };
-        break;
-      case 'piano':
-      default:
-        SynthClass = Tone.Synth;
-        options = {};
-    }
-
-    const synth = new Tone.PolySynth(SynthClass, {
-      ...options,
-      voices: 6,
-      volume: -12
-    });
-
-    synth.toMaster();
-    synthCache.current[type] = synth;
-    return synth;
-  };
-
-  // ✅ Analyze code WITHOUT using Tone (safe on load)
   useEffect(() => {
     if (!editorRef.current) return;
 
@@ -133,8 +88,6 @@ export default function CodeToMusicPlayer() {
 
           // ✅ SAFE: No Tone used here
           let noteName = midiToNoteName(midiNote);
-
-          // Enforce scale (only needs string like "C4")
           noteName = constrainNoteToKey(noteName, keySig);
 
           let duration = '4n';
@@ -174,7 +127,7 @@ export default function CodeToMusicPlayer() {
     };
   }, [filename, darkMode]);
 
-  // Render VexFlow staff
+  // ✅ Render VexFlow with sanitized notes
   useEffect(() => {
     if (!canvasRef.current || notes.length === 0) return;
 
@@ -197,36 +150,14 @@ export default function CodeToMusicPlayer() {
         .setContext(context)
         .draw();
 
-// In VexFlow rendering:
-// Helper: Check if note name is valid for VexFlow
-function isValidVexFlowNote(note) {
-  return /^([A-G](#)?)(\d)$/.test(note);
-}
-
-// Helper: Clean and validate note for VexFlow
-function cleanNoteForVexFlow(note) {
-  if (typeof note !== 'string') return 'C4';
-  
-  // Remove all whitespace and non-musical chars
-  let cleaned = note.trim().replace(/[^A-G#0-9]/g, '');
-  
-  // Enforce format: letter + optional # + digit (e.g., C4, C#4)
-  const match = cleaned.match(/^([A-G])(#?)(\d)$/);
-  if (!match) return 'C4';
-  
-  const [, letter, sharp, octave] = match;
-  return letter + sharp + octave;
-}
-      
-// In your VexFlow rendering:
-const vexNotes = notes.map(note => {
-  const safeNote = cleanNoteForVexFlow(note.noteName);
-  return new VF.StaveNote({
-    clef: 'treble',
-    keys: [safeNote],
-    duration: note.duration.replace('n', ''),
-  });
-});
+      const vexNotes = notes.map(note => {
+        const safeNote = sanitizeNoteForVexFlow(note.noteName);
+        return new VF.StaveNote({
+          clef: 'treble',
+          keys: [safeNote],
+          duration: note.duration.replace('n', ''),
+        });
+      });
 
       const beats = parseInt(firstNote.timeSig.split('/')[0]);
       const beatValue = parseInt(firstNote.timeSig.split('/')[1]);
@@ -240,64 +171,77 @@ const vexNotes = notes.map(note => {
     }
   }, [notes, darkMode]);
 
-  // ✅ Play only after user click → complies with autoplay policy
-const playNotes = async () => {
-  if (notes.length === 0 || isPlaying) return;
+  // ✅ Play audio ONLY after user click — complies with autoplay policy
+  const playNotes = async () => {
+    if (notes.length === 0 || isPlaying) return;
 
-  // ✅ GUARANTEED access
-  const Tone = window.Tone;
-  if (!Tone) {
-    console.error('Tone.js failed to load');
-    return;
-  }
-
-  setIsPlaying(true);
-  try {
-    await Tone.start();
-  } catch (err) {
-    console.error('Tone start failed:', err);
-    setIsPlaying(false);
-    return;
-  }
-
-  const now = Tone.now();
-  let time = now;
-  const cmEditor = editorRef.current?.CodeMirror;
-
-  notes.forEach((note, index) => {
-    let SynthClass;
-    let options = {};
-
-    if (note.instrument === 'pluck') {
-      SynthClass = Tone.PluckSynth;
-    } else if (note.instrument === 'marimba') {
-      SynthClass = Tone.MetalSynth;
-    } else if (note.instrument === 'strings') {
-      SynthClass = Tone.Synth;
-      options = { oscillator: { type: 'triangle' }, envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 } };
-    } else if (note.instrument === 'organ') {
-      SynthClass = Tone.Synth;
-      options = { oscillator: { type: 'sine' }, envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 } };
-    } else {
-      SynthClass = Tone.Synth;
+    // ✅ CRITICAL: Access Tone via window
+    const Tone = window.Tone;
+    if (!Tone) {
+      console.error('Tone.js failed to load. Please check your import.');
+      return;
     }
 
-    // ✅ Safe: SynthClass is now guaranteed defined
-    const synth = new Tone.PolySynth(SynthClass, {
-      ...options,
-      voices: 6,
-      volume: -12
+    setIsPlaying(true);
+    try {
+      await Tone.start();
+    } catch (err) {
+      console.error('Tone start failed:', err);
+      setIsPlaying(false);
+      return;
+    }
+
+    const now = Tone.now();
+    let time = now;
+    const cmEditor = editorRef.current?.CodeMirror;
+
+    notes.forEach((note, index) => {
+      // ✅ Create synth fresh — no caching, no undefined classes
+      let synth;
+      try {
+        if (note.instrument === 'pluck') {
+          synth = new Tone.PolySynth(Tone.PluckSynth, { voices: 6 });
+        } else if (note.instrument === 'marimba') {
+          synth = new Tone.PolySynth(Tone.MetalSynth, { voices: 6 });
+        } else if (note.instrument === 'strings') {
+          synth = new Tone.PolySynth(Tone.Synth, {
+            voices: 6,
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.5, decay: 0.5, sustain: 1, release: 1 }
+          });
+        } else if (note.instrument === 'organ') {
+          synth = new Tone.PolySynth(Tone.Synth, {
+            voices: 6,
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 1 }
+          });
+        } else {
+          synth = new Tone.PolySynth(Tone.Synth, { voices: 6 });
+        }
+        synth.toMaster();
+      } catch (e) {
+        console.error('Failed to create synth:', e);
+        return;
+      }
+
+      synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
+
+      // Highlight code line
+      if (cmEditor) {
+        try {
+          cmEditor.setCursor({ line: index, ch: 0 });
+          cmEditor.addLineClass(index, 'wrap', 'highlight-line');
+          setTimeout(() => {
+            cmEditor.removeLineClass(index, 'wrap', 'highlight-line');
+          }, 100 + (Tone.Time(note.duration).toSeconds() * 1000));
+        } catch (e) { /* ignore */ }
+      }
+
+      time += Tone.Time(note.duration).toSeconds() + 0.1;
     });
-    synth.toMaster();
 
-    synth.triggerAttackRelease(note.noteName, note.duration, time, note.velocity);
-
-    // Highlighting...
-    time += Tone.Time(note.duration).toSeconds() + 0.1;
-  });
-
-  setTimeout(() => setIsPlaying(false), (time - now) * 1000);
-};
+    setTimeout(() => setIsPlaying(false), (time - now) * 1000);
+  };
 
   const exportMIDI = () => {
     if (notes.length === 0) return;
@@ -414,7 +358,7 @@ const playNotes = async () => {
           border: '1px solid var(--border-color)',
         }}>
           <summary style={{ fontWeight: '600', cursor: 'pointer' }}>
-            📊 Debug: Scale-Constrained Notes & Mapping
+            📊 Debug: Notes & Mapping
           </summary>
           <div style={{ fontSize: '0.875rem', lineHeight: '1.6', marginTop: '1rem' }}>
             <p>
@@ -424,10 +368,10 @@ const playNotes = async () => {
               {notes.map((note, i) => (
                 <li key={i}>
                   <strong>L{i+1}:</strong> <code>{note.content.trim()}</code> → 
-                  <span style={{ color: '#d946ef', fontWeight: '600' }}> {note.noteName}</span> (in-key) | 
+                  <span style={{ color: '#d946ef', fontWeight: '600' }}> {note.noteName}</span> → 
+                  <span style={{ color: '#0e9f6e' }}> {sanitizeNoteForVexFlow(note.noteName)}</span> | 
                   <span style={{ color: '#059669' }}> {note.duration}</span> | 
-                  <span style={{ color: '#dc2626' }}> vol: {note.velocity.toFixed(2)}</span> | 
-                  <span style={{ color: '#7c3aed' }}> 🎹 {note.instrument}</span>
+                  <span style={{ color: '#dc2626' }}> vol: {note.velocity.toFixed(2)}</span>
                 </li>
               ))}
             </ul>
