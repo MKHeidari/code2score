@@ -11,6 +11,7 @@ import * as Vex from 'vexflow';
 
 // ✅ Import full Tone.js v13 bundle (defines global `Tone`)
 // import 'tone/build/Tone';
+import 'tone';
 
 // Utils
 import {
