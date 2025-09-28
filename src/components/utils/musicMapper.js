@@ -100,24 +100,13 @@ export const getVelocityAndOctaveByIndent = (line) => {
 export const getScaleNotes = (key = 'C') => {
   try {
     const isMinor = key.toLowerCase().includes('m') || ['Am', 'Em', 'Dm', 'Bm'].includes(key);
-    const scaleType = isMinor ? 'minor' : 'major';
-    const scale = Scale.get(`${key} ${scaleType}`);
-    
-    if (!scale?.notes?.length) {
-      return ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-    }
+    const scale = Scale.get(`${key} ${isMinor ? 'minor' : 'major'}`);
+    if (!scale?.notes) return ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 
-    // Convert flats to enharmonic sharps
-    const flatToSharp = {
-      'Db': 'C#',
-      'Eb': 'D#',
-      'Gb': 'F#',
-      'Ab': 'G#',
-      'Bb': 'A#'
-    };
-
-    return scale.notes.map(note => flatToSharp[note] || note);
-  } catch (e) {
+    // Convert flats to sharps
+    const flatMap = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+    return scale.notes.map(n => flatMap[n] || n);
+  } catch {
     return ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
   }
 };
@@ -129,54 +118,33 @@ export const getScaleNotes = (key = 'C') => {
  * @returns {string} In-scale note name, e.g., "C4", "E5"
  */
 export const constrainNoteToKey = (noteName, key = 'C') => {
-  if (!noteName) return 'C4';
+  if (!noteName || typeof noteName !== 'string') return 'C4';
 
-  try {
-    const note = Note.get(noteName);
-    if (!note || note.empty) {
-      console.warn(`[musicMapper] Invalid note: ${noteName}, defaulting to C4`);
-      return 'C4';
+  // Extract note and octave
+  const match = noteName.match(/^([A-G][#b]?)(\d+)$/);
+  if (!match) return 'C4';
+
+  let [_, notePart, octaveStr] = match;
+  const octave = parseInt(octaveStr, 10);
+
+  // Get scale notes (sharps only)
+  const scaleNotes = getScaleNotes(key);
+  const targetChroma = Note.get(noteName).chroma;
+  if (targetChroma == null) return 'C4';
+
+  // Find closest in-scale note
+  let closest = scaleNotes[0];
+  let minDist = 12;
+  for (const n of scaleNotes) {
+    const c = Note.get(n).chroma;
+    if (c == null) continue;
+    const d = Math.min(Math.abs(targetChroma - c), 12 - Math.abs(targetChroma - c));
+    if (d < minDist) {
+      minDist = d;
+      closest = n;
     }
-
-    const scaleNotes = getScaleNotes(key);
-    const scaleChromas = scaleNotes
-      .map(n => {
-        const parsed = Note.get(n);
-        return parsed.chroma;
-      })
-      .filter(c => c !== undefined);
-
-    if (scaleChromas.length === 0) {
-      return noteName; // fallback if scale is broken
-    }
-
-    const targetChroma = note.chroma;
-    let closestChroma = scaleChromas[0];
-    let minDistance = 12;
-
-    for (const chroma of scaleChromas) {
-      const dist1 = Math.abs(targetChroma - chroma);
-      const dist2 = 12 - dist1;
-      const distance = Math.min(dist1, dist2);
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestChroma = chroma;
-      }
-    }
-
-    // Find note name with that chroma
-    const closestNoteName = scaleNotes.find(n => {
-      const parsed = Note.get(n);
-      return parsed.chroma === closestChroma;
-    });
-
-    // Preserve original octave
-    const octave = note.octave || 4;
-    return closestNoteName + octave;
-
-  } catch (error) {
-    console.error(`[musicMapper] Error constraining note ${noteName} to key ${key}:`, error);
-    return noteName; // fallback
   }
+
+  // Return in same octave, with sharp notation
+  return closest + octave;
 };
