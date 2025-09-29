@@ -196,11 +196,6 @@ const vexNotes = notes
     await Tone.context.resume();
     }
 
-    // ✅ Start transport if not already running
-    if (Tone.Transport.state !== 'started') {
-      await Tone.Transport.start();
-    }
-
     //const now = Tone.now();
     const now = Tone.Transport.now();
     let time = now;
