@@ -28,9 +28,10 @@ function midiToNoteName(midi) {
   if (typeof midi !== 'number' || midi < 0 || midi > 127) return 'C4';
   const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const octave = Math.floor(midi / 12) - 1;
-  const note = midi % 12;
-  return notes[note] + octave;
+  const note = notes[midi % 12];
+  return `${note}${octave}`;
 }
+
 
 // 🔑 Sanitize note for VexFlow: remove bad chars, enforce C4/C#4 format
 function sanitizeNoteForVexFlow(note) {
@@ -149,14 +150,21 @@ export default function CodeToMusicPlayer() {
         .setContext(context)
         .draw();
 
-      const vexNotes = notes.map(note => {
-        const safeNote = sanitizeNoteForVexFlow(note.noteName);
-        return new VF.StaveNote({
-          clef: 'treble',
-          keys: [safeNote],
-          duration: note.duration.replace('n', ''),
-        });
-      });
+const vexNotes = notes
+  .map(note => {
+    const safeNote = sanitizeNoteForVexFlow(note.noteName);
+    if (!safeNote.match(/^([A-G])(#?)(\d)$/)) {
+      console.warn("Skipping invalid note:", note.noteName);
+      return null;
+    }
+    return new VF.StaveNote({
+      clef: 'treble',
+      keys: [safeNote],
+      duration: note.duration.replace('n', ''),
+    });
+  })
+  .filter(note => note !== null); // Remove any skipped notes
+
 
       const beats = parseInt(firstNote.timeSig.split('/')[0]);
       const beatValue = parseInt(firstNote.timeSig.split('/')[1]);
@@ -182,7 +190,12 @@ export default function CodeToMusicPlayer() {
 
     // Start audio context (allowed after user gesture)
     //await Tone.start();
-    await Tone.getContext().resume();
+    //await Tone.getContext().resume();
+
+    if (Tone.context && typeof Tone.context.resume === 'function') {
+    await Tone.context.resume();
+    }
+
 
     const now = Tone.now();
     let time = now;
