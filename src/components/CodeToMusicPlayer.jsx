@@ -181,7 +181,8 @@ export default function CodeToMusicPlayer() {
     const Tone = await import('tone');
 
     // Start audio context (allowed after user gesture)
-    await Tone.start();
+    //await Tone.start();
+    await Tone.getContext().resume();
 
     const now = Tone.now();
     let time = now;
